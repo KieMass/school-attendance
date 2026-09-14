@@ -1,0 +1,460 @@
+// President's College Leave Permission Management System
+// Prisma schema — PostgreSQL
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Enums
+// ---------------------------------------------------------------------------
+
+enum Role {
+  STUDENT
+  PARENT
+  SECURITY
+  STAFF
+  ADMIN
+}
+
+enum LeaveType {
+  DAY_PASS // out and back same day
+  WEEKEND
+  MEDICAL
+  FAMILY_EMERGENCY
+  OFFICIAL_SCHOOL_ACTIVITY
+  OTHER
+}
+
+enum LeaveRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+  EXPIRED
+}
+
+enum ApprovalDecision {
+  APPROVED
+  REJECTED
+}
+
+enum QrTokenStatus {
+  ACTIVE
+  USED
+  EXPIRED
+  REVOKED
+}
+
+enum ExitStatus {
+  EXITED
+  RETURNED
+  OVERDUE
+}
+
+enum NotificationChannel {
+  PUSH
+  EMAIL
+  SMS
+}
+
+enum NotificationType {
+  LEAVE_REQUEST_CREATED
+  LEAVE_REQUEST_APPROVED
+  LEAVE_REQUEST_REJECTED
+  STUDENT_EXITED
+  STUDENT_RETURNED
+  RETURN_OVERDUE
+  ACCOUNT_CREATED
+  PASSWORD_RESET
+}
+
+enum NotificationStatus {
+  PENDING
+  SENT
+  FAILED
+}
+
+enum AuditAction {
+  LOGIN
+  LOGOUT
+  LOGIN_FAILED
+  TOKEN_REFRESHED
+  LEAVE_REQUEST_CREATED
+  LEAVE_REQUEST_UPDATED
+  LEAVE_REQUEST_CANCELLED
+  LEAVE_APPROVED
+  LEAVE_REJECTED
+  QR_GENERATED
+  QR_SCANNED
+  QR_REVOKED
+  STUDENT_SIGNED_OUT
+  STUDENT_SIGNED_IN
+  USER_CREATED
+  USER_UPDATED
+  USER_DEACTIVATED
+  GUARDIAN_ASSIGNED
+  GUARDIAN_REMOVED
+  POLICY_UPDATED
+  DATA_EXPORTED
+}
+
+// ---------------------------------------------------------------------------
+// Core identity
+// ---------------------------------------------------------------------------
+
+/// Base account for every person who can log in. Role-specific data lives in
+/// the Student / Parent / SecurityOfficer / Staff / Admin profile tables.
+model User {
+  id                String    @id @default(uuid())
+  email             String?   @unique
+  phone             String?   @unique
+  passwordHash      String
+  role              Role
+  isActive          Boolean   @default(true)
+  mustChangePassword Boolean  @default(false)
+  lastLoginAt       DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  // Push notification device tokens (Expo / FCM)
+  deviceTokens      DeviceToken[]
+  refreshTokens     RefreshToken[]
+  auditLogs         AuditLog[]
+  notifications     Notification[]
+
+  student           Student?
+  parent            Parent?
+  securityOfficer   SecurityOfficer?
+  staff             Staff?
+  admin             Admin?
+
+  @@index([role])
+  @@map("users")
+}
+
+/// Hashed refresh tokens, one row per issued session, so any single device
+/// can be revoked without invalidating every session (rotation + reuse
+/// detection support).
+model RefreshToken {
+  id          String   @id @default(uuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash   String   @unique
+  expiresAt   DateTime
+  revokedAt   DateTime?
+  replacedBy  String?
+  userAgent   String?
+  ipAddress   String?
+  createdAt   DateTime @default(now())
+
+  @@index([userId])
+  @@map("refresh_tokens")
+}
+
+model DeviceToken {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token     String   @unique
+  platform  String // ios | android | web
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@map("device_tokens")
+}
+
+// ---------------------------------------------------------------------------
+// Role profiles
+// ---------------------------------------------------------------------------
+
+model Student {
+  id             String   @id @default(uuid())
+  userId         String   @unique
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  studentIdCode  String   @unique // school-issued ID number printed on ID card
+  firstName      String
+  lastName       String
+  dormitory      String?
+  gradeLevel     String?
+  photoUrl       String?
+  dateOfBirth    DateTime?
+  isBoarder      Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  guardianLinks    StudentGuardian[]
+  leaveRequests    LeaveRequest[]
+  exitLogs         ExitLog[]
+  returnLogs       ReturnLog[]
+
+  @@index([studentIdCode])
+  @@map("students")
+}
+
+model Parent {
+  id           String   @id @default(uuid())
+  userId       String   @unique
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  firstName    String
+  lastName     String
+  relationship String? // e.g. Mother, Father, Legal Guardian
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  studentLinks StudentGuardian[]
+  approvals    LeaveApproval[]
+
+  @@map("parents")
+}
+
+/// Many-to-many join between students and their approved guardians. A
+/// student may have more than one authorized guardian; a guardian may be
+/// primary for approval-routing purposes.
+model StudentGuardian {
+  id          String   @id @default(uuid())
+  studentId   String
+  student     Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  parentId    String
+  parent      Parent   @relation(fields: [parentId], references: [id], onDelete: Cascade)
+  isPrimary   Boolean  @default(false)
+  canApprove  Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  @@unique([studentId, parentId])
+  @@index([parentId])
+  @@map("student_guardians")
+}
+
+model SecurityOfficer {
+  id         String   @id @default(uuid())
+  userId     String   @unique
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  firstName  String
+  lastName   String
+  badgeNumber String  @unique
+  postLocation String? // e.g. "Main Gate"
+  createdAt  DateTime @default(now())
+
+  exitLogs   ExitLog[]
+  returnLogs ReturnLog[]
+
+  @@map("security_officers")
+}
+
+model Staff {
+  id         String   @id @default(uuid())
+  userId     String   @unique
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  firstName  String
+  lastName   String
+  department String?
+  createdAt  DateTime @default(now())
+
+  @@map("staff")
+}
+
+model Admin {
+  id         String   @id @default(uuid())
+  userId     String   @unique
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  firstName  String
+  lastName   String
+  createdAt  DateTime @default(now())
+
+  @@map("admins")
+}
+
+// ---------------------------------------------------------------------------
+// Leave workflow
+// ---------------------------------------------------------------------------
+
+model LeaveRequest {
+  id                String              @id @default(uuid())
+  studentId         String
+  student           Student             @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  leaveType         LeaveType
+  reason            String
+  destination       String
+  leaveDate         DateTime
+  departureTime     DateTime
+  expectedReturnTime DateTime
+  additionalNotes   String?
+
+  status            LeaveRequestStatus  @default(PENDING)
+
+  // Denormalized for fast dashboard queries once resolved
+  resolvedAt        DateTime?
+
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+
+  approvals         LeaveApproval[]
+  qrTokens          QrToken[]
+  exitLog           ExitLog?
+  returnLog         ReturnLog?
+
+  @@index([studentId])
+  @@index([status])
+  @@index([leaveDate])
+  @@map("leave_requests")
+}
+
+/// One row per guardian decision. A request may require sign-off from only
+/// one authorized guardian (first responder wins) per current school policy;
+/// the table still supports multiple guardians being notified in parallel.
+model LeaveApproval {
+  id             String            @id @default(uuid())
+  leaveRequestId String
+  leaveRequest   LeaveRequest      @relation(fields: [leaveRequestId], references: [id], onDelete: Cascade)
+  parentId       String
+  parent         Parent            @relation(fields: [parentId], references: [id], onDelete: Cascade)
+  decision       ApprovalDecision
+  comments       String?
+  decidedAt      DateTime          @default(now())
+
+  @@index([leaveRequestId])
+  @@index([parentId])
+  @@map("leave_approvals")
+}
+
+/// Encrypted, single-use, time-limited QR token issued after approval.
+model QrToken {
+  id             String        @id @default(uuid())
+  leaveRequestId String
+  leaveRequest   LeaveRequest  @relation(fields: [leaveRequestId], references: [id], onDelete: Cascade)
+
+  /// Random opaque lookup id embedded in the QR payload (NOT the primary
+  /// key) so scanning does not leak sequential database ids.
+  publicId       String        @unique @default(uuid())
+
+  /// AES-256-GCM ciphertext of {requestId, studentId, exp, nonce}, base64.
+  /// This is what actually gets encoded into the QR image; publicId is only
+  /// used as a fast index to look the row up before decrypting/verifying.
+  encryptedPayload String
+
+  securityToken  String        @unique // random 256-bit value, hashed compare on scan
+  issuedAt       DateTime      @default(now())
+  expiresAt      DateTime
+  status         QrTokenStatus @default(ACTIVE)
+  usedAt         DateTime?
+  revokedAt      DateTime?
+  revokedReason  String?
+
+  exitLog        ExitLog?
+
+  @@index([leaveRequestId])
+  @@index([status])
+  @@map("qr_tokens")
+}
+
+model ExitLog {
+  id                String          @id @default(uuid())
+  leaveRequestId    String          @unique
+  leaveRequest      LeaveRequest    @relation(fields: [leaveRequestId], references: [id], onDelete: Cascade)
+  studentId         String
+  student           Student         @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  qrTokenId         String          @unique
+  qrToken           QrToken         @relation(fields: [qrTokenId], references: [id], onDelete: Cascade)
+  securityOfficerId String
+  securityOfficer   SecurityOfficer @relation(fields: [securityOfficerId], references: [id])
+
+  exitAt            DateTime        @default(now())
+  gateLocation      String?
+  status            ExitStatus      @default(EXITED)
+
+  returnLog         ReturnLog?
+
+  @@index([studentId])
+  @@map("exit_logs")
+}
+
+model ReturnLog {
+  id                String          @id @default(uuid())
+  leaveRequestId    String          @unique
+  leaveRequest      LeaveRequest    @relation(fields: [leaveRequestId], references: [id], onDelete: Cascade)
+  studentId         String
+  student           Student         @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  exitLogId         String          @unique
+  exitLog           ExitLog         @relation(fields: [exitLogId], references: [id], onDelete: Cascade)
+  securityOfficerId String
+  securityOfficer   SecurityOfficer @relation(fields: [securityOfficerId], references: [id])
+
+  returnAt          DateTime        @default(now())
+  gateLocation      String?
+  wasLate           Boolean         @default(false)
+  minutesLate       Int?
+  notes             String?
+
+  @@index([studentId])
+  @@map("return_logs")
+}
+
+// ---------------------------------------------------------------------------
+// Notifications
+// ---------------------------------------------------------------------------
+
+model Notification {
+  id         String              @id @default(uuid())
+  userId     String
+  user       User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type       NotificationType
+  channel    NotificationChannel
+  title      String
+  body       String
+  data       Json?               // arbitrary payload (leaveRequestId, deep link, etc.)
+  status     NotificationStatus  @default(PENDING)
+  sentAt     DateTime?
+  error      String?
+  createdAt  DateTime            @default(now())
+
+  @@index([userId])
+  @@index([status])
+  @@map("notifications")
+}
+
+// ---------------------------------------------------------------------------
+// Audit trail
+// ---------------------------------------------------------------------------
+
+model AuditLog {
+  id         String      @id @default(uuid())
+  userId     String?
+  user       User?       @relation(fields: [userId], references: [id], onDelete: SetNull)
+  action     AuditAction
+  entityType String?     // e.g. "LeaveRequest", "QrToken"
+  entityId   String?
+  metadata   Json?
+  ipAddress  String?
+  userAgent  String?
+  createdAt  DateTime    @default(now())
+
+  @@index([userId])
+  @@index([action])
+  @@index([entityType, entityId])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+// ---------------------------------------------------------------------------
+// Configurable policy
+// ---------------------------------------------------------------------------
+
+model LeavePolicy {
+  id                        String   @id @default(uuid())
+  key                       String   @unique // singleton row, key = "default"
+  qrTokenValidityMinutes    Int      @default(120)
+  lateReturnGraceMinutes    Int      @default(15)
+  requireDualApproval       Boolean  @default(false)
+  allowWeekendLeaveOnly     Boolean  @default(false)
+  maxAdvanceRequestDays     Int      @default(14)
+  updatedAt                 DateTime @updatedAt
+
+  @@map("leave_policies")
+}

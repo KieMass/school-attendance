@@ -1,0 +1,77 @@
+version: "3.9"
+
+# Local development / self-hosted stack for the President's College
+# Leave Permission Management System.
+#
+# Usage:
+#   cp apps/api/.env.example apps/api/.env
+#   cp apps/web/.env.example apps/web/.env
+#   docker compose up --build
+#
+# This brings up: PostgreSQL, the NestJS API, and the Next.js web app.
+# The Expo mobile app is run separately with `npm run dev:mobile`.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: pcls-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-pcls}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-pcls_dev_password}
+      POSTGRES_DB: ${POSTGRES_DB:-pcls}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pcls_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-pcls}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: pcls-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    # Used for rate-limiting counters, refresh-token deny-list and BullMQ
+    # notification queues.
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    container_name: pcls-api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    env_file:
+      - apps/api/.env
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-pcls}:${POSTGRES_PASSWORD:-pcls_dev_password}@postgres:5432/${POSTGRES_DB:-pcls}?schema=public
+      REDIS_URL: redis://redis:6379
+    ports:
+      - "4000:4000"
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    container_name: pcls-web
+    restart: unless-stopped
+    depends_on:
+      - api
+    env_file:
+      - apps/web/.env
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:4000/api/v1
+    ports:
+      - "3000:3000"
+
+volumes:
+  pcls_pgdata:

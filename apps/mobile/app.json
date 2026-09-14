@@ -1,0 +1,40 @@
+{
+  "expo": {
+    "name": "PC Leave Pass",
+    "slug": "pcls-mobile",
+    "scheme": "pcls",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "splash": {
+      "backgroundColor": "#0b3d91"
+    },
+    "assetBundlePatterns": ["**/*"],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "gy.edu.presidentscollege.leavepass",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Camera access is used by security officers to scan student gate-pass QR codes."
+      }
+    },
+    "android": {
+      "package": "gy.edu.presidentscollege.leavepass",
+      "adaptiveIcon": {
+        "backgroundColor": "#0b3d91"
+      },
+      "permissions": ["CAMERA", "NOTIFICATIONS"]
+    },
+    "plugins": [
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow $(PRODUCT_NAME) to access your camera to scan gate-pass QR codes."
+        }
+      ],
+      "expo-notifications"
+    ],
+    "extra": {
+      "apiUrl": "http://localhost:4000/api/v1"
+    }
+  }
+}
