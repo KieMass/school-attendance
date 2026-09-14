@@ -26,4 +26,7 @@ COPY --from=builder /app/apps/api/prisma ./prisma
 EXPOSE 4000
 USER node
 
-CMD ["node", "dist/main.js"]
+# Applies any pending migrations before starting — makes the container
+# self-contained for platforms (Render free tier, etc.) that don't give you
+# a shell to run `prisma migrate deploy` by hand before first boot.
+CMD ["sh", "-c", "npx prisma migrate deploy && node dist/main.js"]

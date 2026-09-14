@@ -19,6 +19,7 @@ import { StaffModule } from './staff/staff.module';
 import { AdminModule } from './admin/admin.module';
 import { AuditLogModule } from './audit-log/audit-log.module';
 import { NotificationsModule } from './notifications/notifications.module';
+import { HealthModule } from './health/health.module';
 
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { RolesGuard } from './common/guards/roles.guard';
@@ -43,6 +44,7 @@ import { RolesGuard } from './common/guards/roles.guard';
     AdminModule,
     AuditLogModule,
     NotificationsModule,
+    HealthModule,
   ],
   providers: [
     // Order matters: rate-limit first, then authenticate, then authorize.

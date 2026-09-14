@@ -1,6 +1,6 @@
 import { NestFactory } from '@nestjs/core';
 import { ConfigService } from '@nestjs/config';
-import { ValidationPipe, VersioningType } from '@nestjs/common';
+import { ValidationPipe } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
@@ -10,9 +10,12 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule, { cors: false });
   const config = app.get(ConfigService);
 
+  // API_PREFIX already carries the version segment (default "api/v1"), so
+  // we don't also enable Nest's URI versioning — combining both would
+  // double it up into "/api/v1/v1/...". Bump the version by changing
+  // API_PREFIX (e.g. to "api/v2") when a breaking change is needed.
   const prefix = config.get<string>('API_PREFIX', 'api/v1');
   app.setGlobalPrefix(prefix);
-  app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
 
   app.use(helmet());
 
