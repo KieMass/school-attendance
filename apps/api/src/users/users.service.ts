@@ -138,6 +138,21 @@ export class UsersService {
     return user;
   }
 
+  /** Verifies a plaintext password against the stored hash without ever
+   * handing the hash itself back to the caller (the global PrismaService
+   * omit config hides it from every other query). */
+  async verifyPassword(userId: string, plainPassword: string): Promise<boolean> {
+    // `omit` can't be combined with `select` in the same query, so this
+    // fetches the full row rather than just the hash column — an
+    // acceptable tradeoff for a single-row lookup on the login path.
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      omit: { passwordHash: false },
+    });
+    if (!user) return false;
+    return bcrypt.compare(plainPassword, user.passwordHash);
+  }
+
   async list(params: { role?: Role; page?: number; pageSize?: number; search?: string }) {
     const page = params.page ?? 1;
     const pageSize = Math.min(params.pageSize ?? 25, 100);

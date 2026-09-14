@@ -2,7 +2,11 @@
 // Prisma schema — PostgreSQL
 
 generator client {
-  provider = "prisma-client-js"
+  provider        = "prisma-client-js"
+  // omitApi: lets PrismaService globally omit User.passwordHash from every
+  // query result by default (see prisma.service.ts) instead of relying on
+  // every call site to remember to strip it.
+  previewFeatures = ["omitApi"]
 }
 
 datasource db {

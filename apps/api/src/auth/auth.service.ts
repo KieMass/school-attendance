@@ -40,6 +40,10 @@ export class AuthService {
       where: {
         OR: [{ email: dto.identifier }, { phone: dto.identifier }],
       },
+      // Opt back into the passwordHash the global PrismaService omit config
+      // hides everywhere else — this is the one place that legitimately
+      // needs it, to verify the submitted password.
+      omit: { passwordHash: false },
       include: {
         student: true,
         parent: true,

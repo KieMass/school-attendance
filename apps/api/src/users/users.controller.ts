@@ -1,6 +1,5 @@
 import { Body, Controller, Get, Post, UnauthorizedException } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
-import * as bcrypt from 'bcrypt';
 import {
   CurrentUser,
   AuthenticatedUser,
@@ -16,9 +15,9 @@ export class UsersController {
 
   @Get('me')
   async me(@CurrentUser() user: AuthenticatedUser) {
-    const record = await this.usersService.findById(user.userId);
-    const { passwordHash, ...safe } = record;
-    return safe;
+    // No manual stripping needed — PrismaService omits passwordHash from
+    // every User read by default.
+    return this.usersService.findById(user.userId);
   }
 
   @Post('me/change-password')
@@ -26,8 +25,7 @@ export class UsersController {
     @CurrentUser() user: AuthenticatedUser,
     @Body() dto: ChangePasswordDto,
   ) {
-    const record = await this.usersService.findById(user.userId);
-    const matches = await bcrypt.compare(dto.currentPassword, record.passwordHash);
+    const matches = await this.usersService.verifyPassword(user.userId, dto.currentPassword);
     if (!matches) throw new UnauthorizedException('Current password is incorrect');
     await this.usersService.changePassword(user.userId, dto.newPassword);
     return { success: true };
