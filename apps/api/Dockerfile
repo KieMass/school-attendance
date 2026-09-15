@@ -29,7 +29,13 @@ COPY --from=builder --chown=node:node /app/apps/api/node_modules ./node_modules
 COPY --from=builder --chown=node:node /app/apps/api/dist ./dist
 COPY --from=builder --chown=node:node /app/apps/api/prisma ./prisma
 
-# Applies any pending migrations before starting — makes the container
-# self-contained for platforms (Render free tier, etc.) that don't give you
-# a shell to run `prisma migrate deploy` by hand before first boot.
-CMD ["sh", "-c", "npx prisma migrate deploy && node dist/main.js"]
+# Deliberately NOT running `prisma migrate deploy` here. Auto-migrating on
+# every container boot means concurrent instances could race to apply
+# migrations, and running the CLI inside this minimal runtime image proved
+# unreliable in practice (its schema-engine binary is fetched lazily on
+# first use, and doing that from inside a locked-down runtime container is
+# fragile). Instead, apply migrations as a deliberate one-off step — from
+# your own machine, or a CI job — before/after each deploy:
+#   npx prisma migrate deploy --schema=apps/api/prisma/schema.prisma
+# See docs/DEPLOYMENT.md.
+CMD ["node", "dist/main.js"]
