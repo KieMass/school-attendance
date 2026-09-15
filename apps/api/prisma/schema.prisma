@@ -7,6 +7,13 @@ generator client {
   // query result by default (see prisma.service.ts) instead of relying on
   // every call site to remember to strip it.
   previewFeatures = ["omitApi"]
+  // "native" covers local dev (whatever platform you run `prisma generate`
+  // on — Windows/macOS/etc.); "linux-musl-openssl-3.0.x" is the explicit
+  // target needed for the Alpine + OpenSSL 3.0 Docker image this API
+  // deploys on (Render and this repo's own Dockerfile). Auto-detection
+  // alone picked the wrong musl/OpenSSL variant when `prisma generate` ran
+  // inside the Docker build, so it's pinned explicitly here instead.
+  binaryTargets   = ["native", "linux-musl-openssl-3.0.x"]
 }
 
 datasource db {
